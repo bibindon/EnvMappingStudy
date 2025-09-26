@@ -166,7 +166,11 @@ bool LoadMeshAndEffect()
 
         // 隣接情報を使って法線を再計算（スムージング）
         const DWORD* pAdjData = (pAdj != NULL) ? (const DWORD*)pAdj->GetBufferPointer() : NULL;
-        hr = D3DXComputeNormals(g_pMesh, pAdjData);
+
+        // 球だったら隣接情報あり
+        // 立方体だったら隣接情報なしのほうが良い感じになる
+        //hr = D3DXComputeNormals(g_pMesh, pAdjData);
+        hr = D3DXComputeNormals(g_pMesh, NULL);
         if (FAILED(hr))
         {
             // 念のため隣接なしでも試す
@@ -311,13 +315,13 @@ void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
 void Render()
 {
     static float t = 0.0f;
-    t += 0.02f;
+    t += 0.03f;
 
     // 行列
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(4.0f * sinf(t), 2.0f, -4.0f * cosf(t));
+    D3DXVECTOR3 eye(4.0f * sinf(t), 2.f, -4.0f * cosf(t));
     D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
     g_pEffect->SetVector("g_eyePosW", &eye4);
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
