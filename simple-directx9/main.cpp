@@ -122,7 +122,8 @@ bool LoadMeshAndEffect()
     DWORD        numMaterials = 0;
 
     HRESULT hr = D3DXLoadMeshFromX(
-        _T("cube.x"),
+        //_T("cube.x"),
+        _T("sphere.x"),
         D3DXMESH_MANAGED,
         g_pd3dDevice,
         &pAdj,
@@ -274,7 +275,7 @@ void Render()
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(5.0f * sinf(t), 3.0f, -5.0f * cosf(t));
+    D3DXVECTOR3 eye(4.0f * sinf(t), 2.0f, -4.0f * cosf(t));
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
     D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
 
