@@ -2,6 +2,7 @@
 float4x4 g_matWorldViewProj;
 float4x4 g_matWorld;
 float4x4 g_matView;
+float3 g_eyePosW;
 
 // 環境キューブマップ
 textureCUBE EnvMap;
@@ -16,40 +17,27 @@ sampler_state
     AddressV = CLAMP;
 };
 
-// VS：構造体を使わず out で渡す
+// VS：ワールド位置とワールド法線を渡す
 void VertexShader1(
     float4 inPos : POSITION,
     float3 inNormal : NORMAL0,
     float2 inUV : TEXCOORD0,
     out float4 outPos : POSITION,
-    out float3 outReflVS : TEXCOORD0
+    out float3 outPw : TEXCOORD0,
+    out float3 outNw : TEXCOORD1
 )
 {
-    // まず射影
     outPos = mul(inPos, g_matWorldViewProj);
-
-    // World 空間
-    float3 Nw = normalize(mul(inNormal, (float3x3) g_matWorld));
-    float3 Pw = mul(inPos, g_matWorld).xyz;
-
-    // View 空間
-    float3 Nv = normalize(mul(Nw, (float3x3) g_matView));
-    float3 Pv = mul(float4(Pw, 1.0f), g_matView).xyz;
-
-    // 視線ベクトル（点→カメラ）
-    float3 V = normalize(-Pv);
-
-    // 反射方向（View 空間）
-    outReflVS = reflect(-V, Nv);
+    outPw = mul(inPos, g_matWorld).xyz;
+    outNw = normalize(mul(inNormal, (float3x3) g_matWorld)); // 逆転置が必要ならそちらを
 }
 
-// PS：反射方向でキューブをサンプル
-float4 PixelShader1(
-    float3 inReflVS : TEXCOORD0
-) : COLOR
+// PS：World 空間で反射を計算してキューブをサンプル
+float4 PixelShader1(float3 Pw : TEXCOORD0, float3 Nw : TEXCOORD1) : COLOR
 {
-    float3 env = texCUBE(EnvSamp, inReflVS).rgb;
-    return float4(env, 1.0f);
+    float3 Vw = normalize(g_eyePosW - Pw); // ピクセル→カメラ
+    float3 Rw = reflect(-Vw, normalize(Nw)); // 反射（World）
+    return float4(texCUBE(EnvSamp, Rw).rgb, 1.0);
 }
 
 technique Technique1

@@ -112,7 +112,6 @@ bool InitD3D(HWND hWnd)
 }
 
 // ----------------------------------------------------------------
-
 bool LoadMeshAndEffect()
 {
     // Mesh
@@ -122,14 +121,14 @@ bool LoadMeshAndEffect()
     DWORD        numMaterials = 0;
 
     HRESULT hr = D3DXLoadMeshFromX(
-        //_T("cube.x"),
-        _T("sphere.x"),
+        _T("cube.x"),
+        //_T("sphere.x"),
         D3DXMESH_MANAGED,
         g_pd3dDevice,
         &pAdj,
         &pMtl,
-        &pFxInst,         // 追加
-        &numMaterials,    // 追加
+        &pFxInst,
+        &numMaterials,
         &g_pMesh
     );
 
@@ -140,6 +139,48 @@ bool LoadMeshAndEffect()
         SAFE_RELEASE(pFxInst);
         return false;
     }
+
+    // ==== ここから追加：法線を必ず持たせ、再計算 ====
+    {
+        // メッシュに法線要素が無ければクローンして法線を追加
+        DWORD fvf = g_pMesh->GetFVF();
+        if ((fvf & D3DFVF_NORMAL) == 0)
+        {
+            LPD3DXMESH pCloned = NULL;
+            hr = g_pMesh->CloneMeshFVF(
+                g_pMesh->GetOptions() | D3DXMESH_MANAGED,
+                fvf | D3DFVF_NORMAL,
+                g_pd3dDevice,
+                &pCloned
+            );
+            if (FAILED(hr))
+            {
+                SAFE_RELEASE(pAdj);
+                SAFE_RELEASE(pMtl);
+                SAFE_RELEASE(pFxInst);
+                return false;
+            }
+            SAFE_RELEASE(g_pMesh);
+            g_pMesh = pCloned;
+        }
+
+        // 隣接情報を使って法線を再計算（スムージング）
+        const DWORD* pAdjData = (pAdj != NULL) ? (const DWORD*)pAdj->GetBufferPointer() : NULL;
+        hr = D3DXComputeNormals(g_pMesh, pAdjData);
+        if (FAILED(hr))
+        {
+            // 念のため隣接なしでも試す
+            hr = D3DXComputeNormals(g_pMesh, NULL);
+            if (FAILED(hr))
+            {
+                SAFE_RELEASE(pAdj);
+                SAFE_RELEASE(pMtl);
+                SAFE_RELEASE(pFxInst);
+                return false;
+            }
+        }
+    }
+    // ==== 追加ここまで ====
 
     g_dwNumMaterials = numMaterials;
 
@@ -243,6 +284,7 @@ bool LoadMeshAndEffect()
     return true;
 }
 
+
 // ----------------------------------------------------------------
 
 void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
@@ -276,6 +318,8 @@ void Render()
     D3DXMatrixIdentity(&mW);
 
     D3DXVECTOR3 eye(4.0f * sinf(t), 2.0f, -4.0f * cosf(t));
+    D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
+    g_pEffect->SetVector("g_eyePosW", &eye4);
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
     D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
 
