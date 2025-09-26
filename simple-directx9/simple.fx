@@ -1,46 +1,62 @@
+// 行列
 float4x4 g_matWorldViewProj;
-float4 g_lightNormal = { 0.3f, 1.0f, 0.5f, 0.0f };
+float4x4 g_matWorld;
+float4x4 g_matView;
 
-texture texture1;
-sampler textureSampler = sampler_state {
-    Texture = (texture1);
+// 環境キューブマップ
+textureCUBE EnvMap;
+samplerCUBE EnvSamp =
+sampler_state
+{
+    Texture = <EnvMap>;
     MipFilter = LINEAR;
     MinFilter = LINEAR;
     MagFilter = LINEAR;
+    AddressU = CLAMP;
+    AddressV = CLAMP;
 };
 
-void VertexShader1(in  float4 inPosition  : POSITION,
-                   in  float4 inNormal    : NORMAL0,
-                   in  float4 inTexCood   : TEXCOORD0,
-
-                   out float4 outPosition : POSITION,
-                   out float4 outDiffuse  : COLOR0,
-                   out float4 outTexCood  : TEXCOORD0)
+// VS：構造体を使わず out で渡す
+void VertexShader1(
+    float4 inPos : POSITION,
+    float3 inNormal : NORMAL0,
+    float2 inUV : TEXCOORD0,
+    out float4 outPos : POSITION,
+    out float3 outReflVS : TEXCOORD0
+)
 {
-    outPosition = mul(inPosition, g_matWorldViewProj);
+    // まず射影
+    outPos = mul(inPos, g_matWorldViewProj);
 
-    float lightIntensity = dot(inNormal, g_lightNormal);
-    outDiffuse.rgb = max(0, lightIntensity);
-    outDiffuse.a = 1.0f;
+    // World 空間
+    float3 Nw = normalize(mul(inNormal, (float3x3) g_matWorld));
+    float3 Pw = mul(inPos, g_matWorld).xyz;
 
-    outTexCood = inTexCood;
+    // View 空間
+    float3 Nv = normalize(mul(Nw, (float3x3) g_matView));
+    float3 Pv = mul(float4(Pw, 1.0f), g_matView).xyz;
+
+    // 視線ベクトル（点→カメラ）
+    float3 V = normalize(-Pv);
+
+    // 反射方向（View 空間）
+    outReflVS = reflect(-V, Nv);
 }
 
-void PixelShader1(in float4 inScreenColor : COLOR0,
-                  in float2 inTexCood     : TEXCOORD0,
-
-                  out float4 outColor     : COLOR)
+// PS：反射方向でキューブをサンプル
+float4 PixelShader1(
+    float3 inReflVS : TEXCOORD0
+) : COLOR
 {
-    float4 workColor = (float4)0;
-    workColor = tex2D(textureSampler, inTexCood);
-    outColor = inScreenColor * workColor;
+    float3 env = texCUBE(EnvSamp, inReflVS).rgb;
+    return float4(env, 1.0f);
 }
 
 technique Technique1
 {
-   pass Pass1
-   {
-      VertexShader = compile vs_2_0 VertexShader1();
-      PixelShader = compile ps_2_0 PixelShader1();
-   }
+    pass P0
+    {
+        VertexShader = compile vs_2_0 VertexShader1();
+        PixelShader = compile ps_2_0 PixelShader1();
+    }
 }

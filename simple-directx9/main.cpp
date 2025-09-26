@@ -7,55 +7,361 @@
 
 #include <d3d9.h>
 #include <d3dx9.h>
-#include <string>
 #include <tchar.h>
 #include <cassert>
-#include <crtdbg.h>
 #include <vector>
+#include <string>
 
 #define SAFE_RELEASE(p) { if (p) { (p)->Release(); (p) = NULL; } }
 
-const int WINDOW_SIZE_W = 1600;
-const int WINDOW_SIZE_H = 900;
+static const int WINDOW_SIZE_W = 1024;
+static const int WINDOW_SIZE_H = 768;
 
-LPDIRECT3D9 g_pD3D = NULL;
-LPDIRECT3DDEVICE9 g_pd3dDevice = NULL;
-LPD3DXFONT g_pFont = NULL;
-LPD3DXMESH g_pMesh = NULL;
-std::vector<D3DMATERIAL9> g_pMaterials;
-std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
-DWORD g_dwNumMaterials = 0;
-LPD3DXEFFECT g_pEffect = NULL;
-bool g_bClose = false;
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
-static void TextDraw(LPD3DXFONT pFont, TCHAR* text, int X, int Y);
-static void InitD3D(HWND hWnd);
-static void Cleanup();
-static void Render();
-LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// D3D
+LPDIRECT3D9             g_pD3D = NULL;
+LPDIRECT3DDEVICE9       g_pd3dDevice = NULL;
+ID3DXEffect* g_pEffect = NULL;
+ID3DXFont* g_pFont = NULL;
 
-extern int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
-                            _In_opt_ HINSTANCE hPrevInstance,
-                            _In_ LPTSTR lpCmdLine,
-                            _In_ int nCmdShow);
+// Mesh
+ID3DXMesh* g_pMesh = NULL;
+DWORD                   g_dwNumMaterials = 0;
+std::vector<IDirect3DTexture9*> g_pTextures;
 
-int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPTSTR lpCmdLine,
-                     _In_ int nCmdShow)
+// Env Cube
+LPDIRECT3DCUBETEXTURE9  g_pEnvCube = NULL;
+
+// App
+HWND  g_hWnd = NULL;
+bool  g_bClose = false;
+
+// ----------------------------------------------------------------
+
+void Cleanup()
 {
-    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    for (size_t i = 0; i < g_pTextures.size(); ++i)
+    {
+        SAFE_RELEASE(g_pTextures[i]);
+    }
+    g_pTextures.clear();
 
-    WNDCLASSEX wc { };
-    wc.cbSize = sizeof(WNDCLASSEX);
-    wc.style = CS_CLASSDC;
-    wc.lpfnWndProc = MsgProc;
+    SAFE_RELEASE(g_pEnvCube);
+    SAFE_RELEASE(g_pMesh);
+    SAFE_RELEASE(g_pFont);
+    SAFE_RELEASE(g_pEffect);
+    SAFE_RELEASE(g_pd3dDevice);
+    SAFE_RELEASE(g_pD3D);
+}
+
+// ----------------------------------------------------------------
+
+bool InitD3D(HWND hWnd)
+{
+    g_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+    if (g_pD3D == NULL)
+    {
+        return false;
+    }
+
+    D3DPRESENT_PARAMETERS d3dpp;
+    ZeroMemory(&d3dpp, sizeof(d3dpp));
+
+    d3dpp.BackBufferWidth = WINDOW_SIZE_W;
+    d3dpp.BackBufferHeight = WINDOW_SIZE_H;
+    d3dpp.BackBufferFormat = D3DFMT_X8R8G8B8;
+    d3dpp.BackBufferCount = 1;
+    d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    d3dpp.hDeviceWindow = hWnd;
+    d3dpp.Windowed = TRUE;
+    d3dpp.EnableAutoDepthStencil = TRUE;
+    d3dpp.AutoDepthStencilFormat = D3DFMT_D24S8;
+    d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
+
+    HRESULT hr = g_pD3D->CreateDevice(
+        D3DADAPTER_DEFAULT,
+        D3DDEVTYPE_HAL,
+        hWnd,
+        D3DCREATE_HARDWARE_VERTEXPROCESSING,
+        &d3dpp,
+        &g_pd3dDevice
+    );
+
+    if (FAILED(hr))
+    {
+        hr = g_pD3D->CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_HAL,
+            hWnd,
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+            &d3dpp,
+            &g_pd3dDevice
+        );
+        if (FAILED(hr))
+        {
+            return false;
+        }
+    }
+
+    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
+    g_pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+    g_pd3dDevice->SetRenderState(D3DRS_LIGHTING, FALSE);
+
+    return true;
+}
+
+// ----------------------------------------------------------------
+
+bool LoadMeshAndEffect()
+{
+    // Mesh
+    LPD3DXBUFFER pAdj = NULL;
+    LPD3DXBUFFER pMtl = NULL;
+    LPD3DXBUFFER pFxInst = NULL;
+    DWORD        numMaterials = 0;
+
+    HRESULT hr = D3DXLoadMeshFromX(
+        _T("cube.x"),
+        D3DXMESH_MANAGED,
+        g_pd3dDevice,
+        &pAdj,
+        &pMtl,
+        &pFxInst,         // 追加
+        &numMaterials,    // 追加
+        &g_pMesh
+    );
+
+    if (FAILED(hr))
+    {
+        SAFE_RELEASE(pAdj);
+        SAFE_RELEASE(pMtl);
+        SAFE_RELEASE(pFxInst);
+        return false;
+    }
+
+    g_dwNumMaterials = numMaterials;
+
+    if (pMtl != NULL)
+    {
+        D3DXMATERIAL* pMaterials = (D3DXMATERIAL*)pMtl->GetBufferPointer();
+        // 念のため、numMaterials が 0 の SDK 実装でもサイズから算出
+        if (g_dwNumMaterials == 0)
+        {
+            g_dwNumMaterials = pMtl->GetBufferSize() / sizeof(D3DXMATERIAL);
+        }
+
+        g_pTextures.resize(g_dwNumMaterials, NULL);
+
+        for (DWORD i = 0; i < g_dwNumMaterials; ++i)
+        {
+            if (pMaterials[i].pTextureFilename != NULL &&
+                strlen(pMaterials[i].pTextureFilename) > 0)
+            {
+#ifdef _UNICODE
+                // char* → wchar_t*
+                const char* s = pMaterials[i].pTextureFilename;
+                int wlen = MultiByteToWideChar(CP_ACP, 0, s, -1, NULL, 0);
+                if (wlen > 0)
+                {
+                    std::wstring wname;
+                    wname.resize(wlen);
+                    MultiByteToWideChar(CP_ACP, 0, s, -1, &wname[0], wlen);
+                    D3DXCreateTextureFromFile(g_pd3dDevice, wname.c_str(), &g_pTextures[i]);
+                }
+#else
+                D3DXCreateTextureFromFile(g_pd3dDevice, pMaterials[i].pTextureFilename, &g_pTextures[i]);
+#endif
+            }
+        }
+    }
+    SAFE_RELEASE(pMtl);
+    SAFE_RELEASE(pAdj);
+    SAFE_RELEASE(pFxInst);
+
+    // Effect
+    DWORD flags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+    flags |= D3DXSHADER_DEBUG;
+#endif
+
+    LPD3DXBUFFER pErr = NULL;
+    hr = D3DXCreateEffectFromFile(
+        g_pd3dDevice,
+        _T("simple.fx"),
+        NULL,
+        NULL,
+        flags,
+        NULL,
+        &g_pEffect,
+        &pErr
+    );
+
+    if (FAILED(hr))
+    {
+        if (pErr != NULL)
+        {
+            OutputDebugStringA((const char*)pErr->GetBufferPointer());
+        }
+        SAFE_RELEASE(pErr);
+        return false;
+    }
+    SAFE_RELEASE(pErr);
+
+    // Env Cube
+    hr = D3DXCreateCubeTextureFromFile(
+        g_pd3dDevice,
+        _T("Texture1.dds"),
+        &g_pEnvCube
+    );
+    if (FAILED(hr))
+    {
+        return false;
+    }
+
+    // Font
+    hr = D3DXCreateFont(
+        g_pd3dDevice,
+        18,
+        0,
+        FW_NORMAL,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        _T("Meiryo"),
+        &g_pFont
+    );
+    if (FAILED(hr))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+// ----------------------------------------------------------------
+
+void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
+{
+    if (font == NULL)
+    {
+        return;
+    }
+
+    RECT rc;
+    SetRect(&rc, x, y, x + 2000, y + 200);
+    font->DrawText(
+        NULL,
+        text,
+        -1,
+        &rc,
+        DT_LEFT | DT_TOP | DT_NOCLIP,
+        color
+    );
+}
+
+// ----------------------------------------------------------------
+
+void Render()
+{
+    static float t = 0.0f;
+    t += 0.02f;
+
+    // 行列
+    D3DXMATRIX mW, mV, mP, mWVP;
+    D3DXMatrixIdentity(&mW);
+
+    D3DXVECTOR3 eye(5.0f * sinf(t), 3.0f, -5.0f * cosf(t));
+    D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
+    D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
+
+    D3DXMatrixLookAtLH(&mV, &eye, &at, &up);
+    D3DXMatrixPerspectiveFovLH(
+        &mP,
+        D3DXToRadian(45.0f),
+        (float)WINDOW_SIZE_W / (float)WINDOW_SIZE_H,
+        1.0f,
+        1000.0f
+    );
+
+    mWVP = mW * mV * mP;
+
+    // クリア
+    g_pd3dDevice->Clear(
+        0, NULL,
+        D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+        D3DCOLOR_XRGB(80, 80, 100),
+        1.0f, 0
+    );
+
+    if (SUCCEEDED(g_pd3dDevice->BeginScene()))
+    {
+        // テキスト
+        TextDraw(g_pFont, _T("Environment Mapping (Cube)"), 10, 10, D3DCOLOR_XRGB(255, 255, 255));
+
+        // エフェクト定数
+        g_pEffect->SetMatrix("g_matWorldViewProj", &mWVP);
+        g_pEffect->SetMatrix("g_matWorld", &mW);
+        g_pEffect->SetMatrix("g_matView", &mV);
+        g_pEffect->SetTexture("EnvMap", g_pEnvCube);
+
+        // 描画
+        g_pEffect->SetTechnique("Technique1");
+
+        UINT nPass = 0;
+        if (SUCCEEDED(g_pEffect->Begin(&nPass, 0)))
+        {
+            if (SUCCEEDED(g_pEffect->BeginPass(0)))
+            {
+                for (DWORD i = 0; i < g_dwNumMaterials; ++i)
+                {
+                    g_pMesh->DrawSubset(i);
+                }
+
+                g_pEffect->EndPass();
+            }
+            g_pEffect->End();
+        }
+
+        g_pd3dDevice->EndScene();
+    }
+
+    g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
+}
+
+// ----------------------------------------------------------------
+
+bool InitAll(HWND hWnd)
+{
+    if (!InitD3D(hWnd))
+    {
+        return false;
+    }
+    if (!LoadMeshAndEffect())
+    {
+        return false;
+    }
+    return true;
+}
+
+// ----------------------------------------------------------------
+
+int APIENTRY _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
+{
+    WNDCLASSEX wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wc.lpfnWndProc = WndProc;
     wc.cbClsExtra = 0;
     wc.cbWndExtra = 0;
     wc.hInstance = GetModuleHandle(NULL);
     wc.hIcon = NULL;
-    wc.hCursor = NULL;
-    wc.hbrBackground = NULL;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszMenuName = NULL;
     wc.lpszClassName = _T("Window1");
     wc.hIconSm = NULL;
@@ -66,290 +372,61 @@ int WINAPI _tWinMain(_In_ HINSTANCE hInstance,
     RECT rect;
     SetRect(&rect, 0, 0, WINDOW_SIZE_W, WINDOW_SIZE_H);
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-    rect.right = rect.right - rect.left;
-    rect.bottom = rect.bottom - rect.top;
-    rect.top = 0;
-    rect.left = 0;
 
-    HWND hWnd = CreateWindow(_T("Window1"),
-                             _T("Hello DirectX9 World !!"),
-                             WS_OVERLAPPEDWINDOW,
-                             CW_USEDEFAULT,
-                             CW_USEDEFAULT,
-                             rect.right,
-                             rect.bottom,
-                             NULL,
-                             NULL,
-                             wc.hInstance,
-                             NULL);
+    HWND hWnd = CreateWindow(
+        _T("Window1"),
+        _T("EnvMap Sample"),
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+        NULL, NULL,
+        GetModuleHandle(NULL),
+        NULL
+    );
+    assert(hWnd != NULL);
+    g_hWnd = hWnd;
 
-    InitD3D(hWnd);
-    ShowWindow(hWnd, SW_SHOWDEFAULT);
+    ShowWindow(hWnd, SW_SHOW);
     UpdateWindow(hWnd);
 
-    MSG msg;
-
-    while (true)
+    if (!InitAll(hWnd))
     {
-        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        Cleanup();
+        return 0;
+    }
+
+    MSG msg;
+    ZeroMemory(&msg, sizeof(msg));
+
+    while (!g_bClose)
+    {
+        if (PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE))
         {
-            DispatchMessage(&msg);
+            if (msg.message == WM_QUIT)
+            {
+                g_bClose = true;
+            }
+            else
+            {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
         }
         else
         {
             Sleep(16);
             Render();
         }
-
-        if (g_bClose)
-        {
-            break;
-        }
     }
 
     Cleanup();
-
-    UnregisterClass(_T("Window1"), wc.hInstance);
     return 0;
 }
 
-void TextDraw(LPD3DXFONT pFont, TCHAR* text, int X, int Y)
-{
-    RECT rect = { X, Y, 0, 0 };
+// ----------------------------------------------------------------
 
-    // DrawTextの戻り値は文字数である。
-    // そのため、hResultの中身が整数でもエラーが起きているわけではない。
-    HRESULT hResult = pFont->DrawText(NULL,
-                                      text,
-                                      -1,
-                                      &rect,
-                                      DT_LEFT | DT_NOCLIP,
-                                      D3DCOLOR_ARGB(255, 0, 0, 0));
-
-    assert((int)hResult >= 0);
-}
-
-void InitD3D(HWND hWnd)
-{
-    HRESULT hResult = E_FAIL;
-
-    g_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
-    assert(g_pD3D != NULL);
-
-    D3DPRESENT_PARAMETERS d3dpp;
-    ZeroMemory(&d3dpp, sizeof(d3dpp));
-    d3dpp.Windowed = TRUE;
-    d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    d3dpp.BackBufferFormat = D3DFMT_UNKNOWN;
-    d3dpp.BackBufferCount = 1;
-    d3dpp.MultiSampleType = D3DMULTISAMPLE_NONE;
-    d3dpp.MultiSampleQuality = 0;
-    d3dpp.EnableAutoDepthStencil = TRUE;
-    d3dpp.AutoDepthStencilFormat = D3DFMT_D16;
-    d3dpp.hDeviceWindow = hWnd;
-    d3dpp.Flags = 0;
-    d3dpp.FullScreen_RefreshRateInHz = D3DPRESENT_RATE_DEFAULT;
-    d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-
-    hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
-                                   D3DDEVTYPE_HAL,
-                                   hWnd,
-                                   D3DCREATE_HARDWARE_VERTEXPROCESSING,
-                                   &d3dpp,
-                                   &g_pd3dDevice);
-
-    if (FAILED(hResult))
-    {
-        hResult = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
-                                       D3DDEVTYPE_HAL,
-                                       hWnd,
-                                       D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-                                       &d3dpp,
-                                       &g_pd3dDevice);
-
-        assert(hResult == S_OK);
-    }
-
-    hResult = D3DXCreateFont(g_pd3dDevice,
-                             20,
-                             0,
-                             FW_HEAVY,
-                             1,
-                             FALSE,
-                             SHIFTJIS_CHARSET,
-                             OUT_TT_ONLY_PRECIS,
-                             CLEARTYPE_NATURAL_QUALITY,
-                             FF_DONTCARE,
-                             _T("ＭＳ ゴシック"),
-                             &g_pFont);
-
-    assert(hResult == S_OK);
-
-    LPD3DXBUFFER pD3DXMtrlBuffer = NULL;
-
-    hResult = D3DXLoadMeshFromX(_T("cube.x"),
-                                D3DXMESH_SYSTEMMEM,
-                                g_pd3dDevice,
-                                NULL,
-                                &pD3DXMtrlBuffer,
-                                NULL,
-                                &g_dwNumMaterials,
-                                &g_pMesh);
-
-    assert(hResult == S_OK);
-
-    D3DXMATERIAL* d3dxMaterials = (D3DXMATERIAL*)pD3DXMtrlBuffer->GetBufferPointer();
-    g_pMaterials.resize(g_dwNumMaterials);
-    g_pTextures.resize(g_dwNumMaterials);
-
-    for (DWORD i = 0; i < g_dwNumMaterials; i++)
-    {
-        g_pMaterials[i] = d3dxMaterials[i].MatD3D;
-        g_pMaterials[i].Ambient = g_pMaterials[i].Diffuse;
-        g_pTextures[i] = NULL;
-        
-        //--------------------------------------------------------------
-        // Unicode文字セットでもマルチバイト文字セットでも
-        // "d3dxMaterials[i].pTextureFilename"はマルチバイト文字セットになる。
-        // 
-        // 一方で、D3DXCreateTextureFromFileはプロジェクト設定で
-        // Unicode文字セットかマルチバイト文字セットか変わる。
-        //--------------------------------------------------------------
-
-        std::string pTexPath(d3dxMaterials[i].pTextureFilename);
-
-        if (!pTexPath.empty())
-        {
-            bool bUnicode = false;
-
-#ifdef UNICODE
-            bUnicode = true;
-#endif
-
-            if (!bUnicode)
-            {
-                hResult = D3DXCreateTextureFromFileA(g_pd3dDevice, pTexPath.c_str(), &g_pTextures[i]);
-                assert(hResult == S_OK);
-            }
-            else
-            {
-                int len = MultiByteToWideChar(CP_ACP, 0, pTexPath.c_str(), -1, nullptr, 0);
-                std::wstring pTexPathW(len, 0);
-                MultiByteToWideChar(CP_ACP, 0, pTexPath.c_str(), -1, &pTexPathW[0], len);
-
-                hResult = D3DXCreateTextureFromFileW(g_pd3dDevice, pTexPathW.c_str(), &g_pTextures[i]);
-                assert(hResult == S_OK);
-            }
-        }
-    }
-
-    hResult = pD3DXMtrlBuffer->Release();
-    assert(hResult == S_OK);
-
-    hResult = D3DXCreateEffectFromFile(g_pd3dDevice,
-                                       _T("simple.fx"),
-                                       NULL,
-                                       NULL,
-                                       D3DXSHADER_DEBUG,
-                                       NULL,
-                                       &g_pEffect,
-                                       NULL);
-
-    assert(hResult == S_OK);
-}
-
-void Cleanup()
-{
-    for (auto& texture : g_pTextures)
-    {
-        SAFE_RELEASE(texture);
-    }
-
-    SAFE_RELEASE(g_pMesh);
-    SAFE_RELEASE(g_pEffect);
-    SAFE_RELEASE(g_pFont);
-    SAFE_RELEASE(g_pd3dDevice);
-    SAFE_RELEASE(g_pD3D);
-}
-
-void Render()
-{
-    HRESULT hResult = E_FAIL;
-
-    static float f = 0.0f;
-    f += 0.025f;
-
-    D3DXMATRIX mat;
-    D3DXMATRIX View, Proj;
-
-    D3DXMatrixPerspectiveFovLH(&Proj,
-                               D3DXToRadian(45),
-                               (float)WINDOW_SIZE_W / WINDOW_SIZE_H,
-                               1.0f,
-                               10000.0f);
-
-    D3DXVECTOR3 vec1(10 * sinf(f), 10, -10 * cosf(f));
-    D3DXVECTOR3 vec2(0, 0, 0);
-    D3DXVECTOR3 vec3(0, 1, 0);
-    D3DXMatrixLookAtLH(&View, &vec1, &vec2, &vec3);
-    D3DXMatrixIdentity(&mat);
-    mat = mat * View * Proj;
-
-    hResult = g_pEffect->SetMatrix("g_matWorldViewProj", &mat);
-    assert(hResult == S_OK);
-
-    hResult = g_pd3dDevice->Clear(0,
-                                  NULL,
-                                  D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-                                  D3DCOLOR_XRGB(100, 100, 100),
-                                  1.0f,
-                                  0);
-
-    assert(hResult == S_OK);
-
-    hResult = g_pd3dDevice->BeginScene();
-    assert(hResult == S_OK);
-
-    TCHAR msg[100];
-    _tcscpy_s(msg, 100, _T("Xファイルの読み込みと表示"));
-    TextDraw(g_pFont, msg, 0, 0);
-
-    hResult = g_pEffect->SetTechnique("Technique1");
-    assert(hResult == S_OK);
-
-    UINT numPass;
-    hResult = g_pEffect->Begin(&numPass, 0);
-    assert(hResult == S_OK);
-
-    hResult = g_pEffect->BeginPass(0);
-    assert(hResult == S_OK);
-
-    for (DWORD i = 0; i < g_dwNumMaterials; i++)
-    {
-        hResult = g_pEffect->SetTexture("texture1", g_pTextures[i]);
-        assert(hResult == S_OK);
-
-        hResult = g_pEffect->CommitChanges();
-        assert(hResult == S_OK);
-
-        hResult = g_pMesh->DrawSubset(i);
-        assert(hResult == S_OK);
-    }
-
-    hResult = g_pEffect->EndPass();
-    assert(hResult == S_OK);
-
-    hResult = g_pEffect->End();
-    assert(hResult == S_OK);
-
-    hResult = g_pd3dDevice->EndScene();
-    assert(hResult == S_OK);
-
-    hResult = g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
-    assert(hResult == S_OK);
-}
-
-LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
@@ -363,4 +440,3 @@ LRESULT WINAPI MsgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
-
