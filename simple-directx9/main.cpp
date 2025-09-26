@@ -14,8 +14,8 @@
 
 #define SAFE_RELEASE(p) { if (p) { (p)->Release(); (p) = NULL; } }
 
-static const int WINDOW_SIZE_W = 1024;
-static const int WINDOW_SIZE_H = 768;
+static const int WINDOW_SIZE_W = 1600;
+static const int WINDOW_SIZE_H = 900;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
@@ -231,7 +231,7 @@ bool LoadMeshAndEffect()
         OUT_DEFAULT_PRECIS,
         DEFAULT_QUALITY,
         DEFAULT_PITCH | FF_DONTCARE,
-        _T("Meiryo"),
+        _T("BIZ UDゴシック"),
         &g_pFont
     );
     if (FAILED(hr))

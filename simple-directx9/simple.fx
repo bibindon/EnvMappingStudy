@@ -56,7 +56,7 @@ technique Technique1
 {
     pass P0
     {
-        VertexShader = compile vs_2_0 VertexShader1();
-        PixelShader = compile ps_2_0 PixelShader1();
+        VertexShader = compile vs_3_0 VertexShader1();
+        PixelShader = compile ps_3_0 PixelShader1();
     }
 }
