@@ -30,6 +30,12 @@ LPD3DXMESH          g_pMesh = NULL;
 DWORD               g_dwNumMaterials = 0;
 std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
 
+// Sky Mesh
+LPD3DXEFFECT        g_pEffect2 = NULL;
+LPD3DXMESH          g_pMesh2 = NULL;
+DWORD               g_dwNumMaterials2 = 0;
+std::vector<LPDIRECT3DTEXTURE9> g_pTextures2;
+
 // Env Cube
 LPDIRECT3DCUBETEXTURE9  g_pEnvCube = NULL;
 
@@ -47,8 +53,10 @@ static void Cleanup()
 
     SAFE_RELEASE(g_pEnvCube);
     SAFE_RELEASE(g_pMesh);
+    SAFE_RELEASE(g_pMesh2);
     SAFE_RELEASE(g_pFont);
     SAFE_RELEASE(g_pEffect);
+    SAFE_RELEASE(g_pEffect2);
     SAFE_RELEASE(g_pd3dDevice);
     SAFE_RELEASE(g_pD3D);
 }
@@ -124,7 +132,7 @@ static bool LoadMeshAndEffect()
     // 隣接情報を計算して法線を再計算
     // なめらかになる
     // なめらかにしたくないときは計算してはいけない
-    if (true)
+    if (false)
     {
         // 隣接情報を使って法線を再計算（スムージング）
         DWORD* pAdjData = nullptr;
@@ -190,6 +198,73 @@ static bool LoadMeshAndEffect()
     return true;
 }
 
+static bool LoadMeshAndEffect2()
+{
+    // Mesh
+    LPD3DXBUFFER pAdj = NULL;
+    LPD3DXBUFFER pMtl = NULL;
+    DWORD        numMaterials = 0;
+
+    HRESULT hr = D3DXLoadMeshFromX(
+                                   _T("sky.blend.x"),
+                                   D3DXMESH_MANAGED,
+                                   g_pd3dDevice,
+                                   &pAdj,
+                                   &pMtl,
+                                   NULL,
+                                   &numMaterials,
+                                   &g_pMesh2);
+
+    assert(hr == S_OK);
+
+    g_dwNumMaterials2 = numMaterials;
+
+    // 隣接情報を計算して法線を再計算
+    // なめらかになる
+    // なめらかにしたくないときは計算してはいけない
+    if (true)
+    {
+        // 隣接情報を使って法線を再計算（スムージング）
+        DWORD* pAdjData = nullptr;
+        pAdjData = (DWORD*)pAdj->GetBufferPointer();
+
+        hr = D3DXComputeNormals(g_pMesh2, pAdjData);
+    }
+    SAFE_RELEASE(pAdj);
+
+    if (pMtl != NULL)
+    {
+        D3DXMATERIAL* pMaterials = (D3DXMATERIAL*)pMtl->GetBufferPointer();
+
+        g_pTextures2.resize(g_dwNumMaterials2, NULL);
+
+        for (DWORD i = 0; i < g_dwNumMaterials2; ++i)
+        {
+            if (pMaterials[i].pTextureFilename != NULL &&
+                strlen(pMaterials[i].pTextureFilename) > 0)
+            {
+                const char* s = pMaterials[i].pTextureFilename;
+                D3DXCreateTextureFromFileA(g_pd3dDevice, s, &g_pTextures2[i]);
+            }
+        }
+    }
+
+    SAFE_RELEASE(pMtl);
+
+    hr = D3DXCreateEffectFromFile(g_pd3dDevice,
+                                  L"simple2.fx",
+                                  NULL,
+                                  NULL,
+                                  D3DXSHADER_DEBUG,
+                                  NULL,
+                                  &g_pEffect2,
+                                  NULL);
+
+    assert(hr == S_OK);
+
+    return true;
+}
+
 static void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
 {
     if (font == NULL)
@@ -216,7 +291,7 @@ static void Render()
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(4.0f * sinf(t), 4.f * sinf(t), -4.0f * cosf(t));
+    D3DXVECTOR3 eye(6.0f * sinf(t), 6.f * sinf(t), -6.0f * cosf(t));
     //D3DXVECTOR3 eye(4.0f * sinf(t), 2.f, -4.0f * cosf(t));
     D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
     g_pEffect->SetVector("g_eyePosW", &eye4);
@@ -246,27 +321,52 @@ static void Render()
     g_pEffect->SetTexture("EnvMap", g_pEnvCube);
     g_pEffect->CommitChanges();
 
+    g_pEffect2->SetMatrix("g_matWorldViewProj", &mWVP);
+    g_pEffect2->SetTexture("texture1", g_pTextures2[0]);
+    g_pEffect2->CommitChanges();
+
     if (SUCCEEDED(g_pd3dDevice->BeginScene()))
     {
         // テキスト
         TextDraw(g_pFont, L"環境マッピング", 10, 10, D3DCOLOR_XRGB(255, 255, 255));
 
         // 描画
-        g_pEffect->SetTechnique("Technique1");
-
-        UINT nPass = 0;
-        if (SUCCEEDED(g_pEffect->Begin(&nPass, 0)))
         {
-            if (SUCCEEDED(g_pEffect->BeginPass(0)))
-            {
-                for (DWORD i = 0; i < g_dwNumMaterials; ++i)
-                {
-                    g_pMesh->DrawSubset(i);
-                }
+            g_pEffect->SetTechnique("Technique1");
 
-                g_pEffect->EndPass();
+            UINT nPass = 0;
+            if (SUCCEEDED(g_pEffect->Begin(&nPass, 0)))
+            {
+                if (SUCCEEDED(g_pEffect->BeginPass(0)))
+                {
+                    for (DWORD i = 0; i < g_dwNumMaterials; ++i)
+                    {
+                        g_pMesh->DrawSubset(i);
+                    }
+
+                    g_pEffect->EndPass();
+                }
+                g_pEffect->End();
             }
-            g_pEffect->End();
+        }
+
+        {
+            g_pEffect2->SetTechnique("Technique1");
+
+            UINT nPass = 0;
+            if (SUCCEEDED(g_pEffect2->Begin(&nPass, 0)))
+            {
+                if (SUCCEEDED(g_pEffect2->BeginPass(0)))
+                {
+                    for (DWORD i = 0; i < g_dwNumMaterials2; ++i)
+                    {
+                        g_pMesh2->DrawSubset(i);
+                    }
+
+                    g_pEffect2->EndPass();
+                }
+                g_pEffect2->End();
+            }
         }
 
         g_pd3dDevice->EndScene();
@@ -283,6 +383,11 @@ static bool InitAll(HWND hWnd)
     }
 
     if (!LoadMeshAndEffect())
+    {
+        return false;
+    }
+
+    if (!LoadMeshAndEffect2())
     {
         return false;
     }

@@ -39,9 +39,10 @@ float4 PixelShader1(float3 posWorld  : TEXCOORD0,
     float3 viewWorld = normalize(posWorld - g_eyePosW);
 
     // îΩéÀÅiWorldÅj
-    float3 reflectWorld = refract(viewWorld, normalize(normWorld), 1.0 / 1.5);
+    float3 refractWorld = refract(viewWorld, normalize(normWorld), 1.0 / 1.5);
 
-    return float4(texCUBE(EnvSamp, reflectWorld).rgb, 1.0);
+    float3 refractColor = texCUBE(EnvSamp, refractWorld).rgb;
+    return float4(refractColor, 1.f);
 }
 
 technique Technique1
