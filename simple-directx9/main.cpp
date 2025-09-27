@@ -374,7 +374,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance,
                              NULL,
                              NULL,
                              GetModuleHandle(NULL),
-                             NULL );
+                             NULL);
 
     assert(hWnd != NULL);
     g_hWnd = hWnd;
