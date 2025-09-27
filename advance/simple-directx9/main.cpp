@@ -112,8 +112,8 @@ static bool LoadMeshAndEffect()
     DWORD        numMaterials = 0;
 
     HRESULT hr = D3DXLoadMeshFromX(
-                                   _T("cube.x"),
-                                   //_T("sphere.x"),
+                                   //_T("cube.x"),
+                                   _T("sphere.x"),
                                    D3DXMESH_MANAGED,
                                    g_pd3dDevice,
                                    &pAdj,
@@ -156,8 +156,8 @@ static bool LoadMeshAndEffect()
 
         // 球だったら隣接情報あり
         // 立方体だったら隣接情報なしのほうが良い感じになる
-        //hr = D3DXComputeNormals(g_pMesh, pAdjData);
-        hr = D3DXComputeNormals(g_pMesh, NULL);
+        hr = D3DXComputeNormals(g_pMesh, pAdjData);
+        //hr = D3DXComputeNormals(g_pMesh, NULL);
     }
 
     g_dwNumMaterials = numMaterials;
@@ -280,17 +280,16 @@ static void Render()
 
     if (SUCCEEDED(g_pd3dDevice->BeginScene()))
     {
-        // テキスト
-        TextDraw(g_pFont, L"環境マッピング", 10, 10, D3DCOLOR_XRGB(255, 255, 255));
-
         // エフェクト定数
         g_pEffect->SetMatrix("g_matWorldViewProj", &mWVP);
         g_pEffect->SetMatrix("g_matWorld", &mW);
         g_pEffect->SetMatrix("g_matView", &mV);
         g_pEffect->SetTexture("EnvMap", g_pEnvCube);
 
+        // 例として反射強度を少し上げたい場合
+        float reflectAmount = 0.4f;
+        g_pEffect->SetFloat("g_reflectAmount", reflectAmount);
 
-        // 描画
         g_pEffect->SetTechnique("Technique1");
 
         UINT nPass = 0;
@@ -300,6 +299,14 @@ static void Render()
             {
                 for (DWORD i = 0; i < g_dwNumMaterials; ++i)
                 {
+                    LPDIRECT3DTEXTURE9 albedoTex = NULL;
+
+                    if (i < g_pTextures.size())
+                    {
+                        albedoTex = g_pTextures[i];
+                    }
+
+                    g_pEffect->SetTexture("AlbedoTex", albedoTex);
                     g_pMesh->DrawSubset(i);
                 }
 
@@ -312,6 +319,9 @@ static void Render()
     }
 
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
+
+
+
 }
 
 static bool InitAll(HWND hWnd)
