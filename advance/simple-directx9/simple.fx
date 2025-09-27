@@ -69,8 +69,13 @@ float4 PixelShader1(float3 posWorld : TEXCOORD0,
     float fresnel = pow(1.0 - nv, 5.0);
 
     float reflectFactor = saturate(g_reflectAmount + 0.5 * fresnel);
+    
+    float brightness = albedo.r * 0.2 + albedo.g * 0.7 + albedo.b * 0.1;
 
-    float3 outRgb = lerp(albedo, envColor, reflectFactor);
+    brightness *= brightness;
+    float3 outRgb = albedo + envColor * brightness;
+
+//    float3 outRgb = lerp(albedo, envColor, reflectFactor);
     return float4(outRgb, 1.0);
 }
 
