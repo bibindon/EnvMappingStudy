@@ -20,15 +20,15 @@ static const int WINDOW_SIZE_H = 900;
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
 // D3D
-LPDIRECT3D9             g_pD3D = NULL;
-LPDIRECT3DDEVICE9       g_pd3dDevice = NULL;
-ID3DXEffect* g_pEffect = NULL;
-ID3DXFont* g_pFont = NULL;
+LPDIRECT3D9         g_pD3D = NULL;
+LPDIRECT3DDEVICE9   g_pd3dDevice = NULL;
+LPD3DXEFFECT        g_pEffect = NULL;
+LPD3DXFONT          g_pFont = NULL;
 
 // Mesh
-ID3DXMesh* g_pMesh = NULL;
-DWORD                   g_dwNumMaterials = 0;
-std::vector<IDirect3DTexture9*> g_pTextures;
+LPD3DXMESH          g_pMesh = NULL;
+DWORD               g_dwNumMaterials = 0;
+std::vector<LPDIRECT3DTEXTURE9> g_pTextures;
 
 // Env Cube
 LPDIRECT3DCUBETEXTURE9  g_pEnvCube = NULL;
@@ -37,9 +37,7 @@ LPDIRECT3DCUBETEXTURE9  g_pEnvCube = NULL;
 HWND  g_hWnd = NULL;
 bool  g_bClose = false;
 
-// ----------------------------------------------------------------
-
-void Cleanup()
+static void Cleanup()
 {
     for (size_t i = 0; i < g_pTextures.size(); ++i)
     {
@@ -55,9 +53,7 @@ void Cleanup()
     SAFE_RELEASE(g_pD3D);
 }
 
-// ----------------------------------------------------------------
-
-bool InitD3D(HWND hWnd)
+static bool InitD3D(HWND hWnd)
 {
     g_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
     if (g_pD3D == NULL)
@@ -79,25 +75,21 @@ bool InitD3D(HWND hWnd)
     d3dpp.AutoDepthStencilFormat = D3DFMT_D24S8;
     d3dpp.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
 
-    HRESULT hr = g_pD3D->CreateDevice(
-        D3DADAPTER_DEFAULT,
-        D3DDEVTYPE_HAL,
-        hWnd,
-        D3DCREATE_HARDWARE_VERTEXPROCESSING,
-        &d3dpp,
-        &g_pd3dDevice
-    );
+    HRESULT hr = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
+                                      D3DDEVTYPE_HAL,
+                                      hWnd,
+                                      D3DCREATE_HARDWARE_VERTEXPROCESSING,
+                                      &d3dpp,
+                                      &g_pd3dDevice);
 
     if (FAILED(hr))
     {
-        hr = g_pD3D->CreateDevice(
-            D3DADAPTER_DEFAULT,
-            D3DDEVTYPE_HAL,
-            hWnd,
-            D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-            &d3dpp,
-            &g_pd3dDevice
-        );
+        hr = g_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
+                                  D3DDEVTYPE_HAL,
+                                  hWnd,
+                                  D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+                                  &d3dpp,
+                                  &g_pd3dDevice);
         if (FAILED(hr))
         {
             return false;
@@ -111,8 +103,7 @@ bool InitD3D(HWND hWnd)
     return true;
 }
 
-// ----------------------------------------------------------------
-bool LoadMeshAndEffect()
+static bool LoadMeshAndEffect()
 {
     // Mesh
     LPD3DXBUFFER pAdj = NULL;
@@ -121,16 +112,15 @@ bool LoadMeshAndEffect()
     DWORD        numMaterials = 0;
 
     HRESULT hr = D3DXLoadMeshFromX(
-        _T("cube.x"),
-        //_T("sphere.x"),
-        D3DXMESH_MANAGED,
-        g_pd3dDevice,
-        &pAdj,
-        &pMtl,
-        &pFxInst,
-        &numMaterials,
-        &g_pMesh
-    );
+                                   _T("cube.x"),
+                                   //_T("sphere.x"),
+                                   D3DXMESH_MANAGED,
+                                   g_pd3dDevice,
+                                   &pAdj,
+                                   &pMtl,
+                                   &pFxInst,
+                                   &numMaterials,
+                                   &g_pMesh);
 
     if (FAILED(hr))
     {
@@ -140,51 +130,35 @@ bool LoadMeshAndEffect()
         return false;
     }
 
-    // ==== ここから追加：法線を必ず持たせ、再計算 ====
     {
         // メッシュに法線要素が無ければクローンして法線を追加
         DWORD fvf = g_pMesh->GetFVF();
         if ((fvf & D3DFVF_NORMAL) == 0)
         {
             LPD3DXMESH pCloned = NULL;
-            hr = g_pMesh->CloneMeshFVF(
-                g_pMesh->GetOptions() | D3DXMESH_MANAGED,
-                fvf | D3DFVF_NORMAL,
-                g_pd3dDevice,
-                &pCloned
-            );
-            if (FAILED(hr))
-            {
-                SAFE_RELEASE(pAdj);
-                SAFE_RELEASE(pMtl);
-                SAFE_RELEASE(pFxInst);
-                return false;
-            }
+            hr = g_pMesh->CloneMeshFVF(g_pMesh->GetOptions() | D3DXMESH_MANAGED,
+                                       fvf | D3DFVF_NORMAL,
+                                       g_pd3dDevice,
+                                       &pCloned);
+
+            assert(hr == S_OK);
+
             SAFE_RELEASE(g_pMesh);
             g_pMesh = pCloned;
         }
 
         // 隣接情報を使って法線を再計算（スムージング）
-        const DWORD* pAdjData = (pAdj != NULL) ? (const DWORD*)pAdj->GetBufferPointer() : NULL;
+        DWORD* pAdjData = nullptr;
+        if (pAdj != NULL)
+        {
+            pAdjData = (DWORD*)pAdj->GetBufferPointer();
+        }
 
         // 球だったら隣接情報あり
         // 立方体だったら隣接情報なしのほうが良い感じになる
         //hr = D3DXComputeNormals(g_pMesh, pAdjData);
         hr = D3DXComputeNormals(g_pMesh, NULL);
-        if (FAILED(hr))
-        {
-            // 念のため隣接なしでも試す
-            hr = D3DXComputeNormals(g_pMesh, NULL);
-            if (FAILED(hr))
-            {
-                SAFE_RELEASE(pAdj);
-                SAFE_RELEASE(pMtl);
-                SAFE_RELEASE(pFxInst);
-                return false;
-            }
-        }
     }
-    // ==== 追加ここまで ====
 
     g_dwNumMaterials = numMaterials;
 
@@ -204,20 +178,8 @@ bool LoadMeshAndEffect()
             if (pMaterials[i].pTextureFilename != NULL &&
                 strlen(pMaterials[i].pTextureFilename) > 0)
             {
-#ifdef _UNICODE
-                // char* → wchar_t*
                 const char* s = pMaterials[i].pTextureFilename;
-                int wlen = MultiByteToWideChar(CP_ACP, 0, s, -1, NULL, 0);
-                if (wlen > 0)
-                {
-                    std::wstring wname;
-                    wname.resize(wlen);
-                    MultiByteToWideChar(CP_ACP, 0, s, -1, &wname[0], wlen);
-                    D3DXCreateTextureFromFile(g_pd3dDevice, wname.c_str(), &g_pTextures[i]);
-                }
-#else
-                D3DXCreateTextureFromFile(g_pd3dDevice, pMaterials[i].pTextureFilename, &g_pTextures[i]);
-#endif
+                D3DXCreateTextureFromFileA(g_pd3dDevice, s, &g_pTextures[i]);
             }
         }
     }
@@ -226,60 +188,44 @@ bool LoadMeshAndEffect()
     SAFE_RELEASE(pFxInst);
 
     // Effect
-    DWORD flags = 0;
-#if defined(DEBUG) || defined(_DEBUG)
-    flags |= D3DXSHADER_DEBUG;
-#endif
 
     LPD3DXBUFFER pErr = NULL;
-    hr = D3DXCreateEffectFromFile(
-        g_pd3dDevice,
-        _T("simple.fx"),
-        NULL,
-        NULL,
-        flags,
-        NULL,
-        &g_pEffect,
-        &pErr
-    );
+    hr = D3DXCreateEffectFromFile(g_pd3dDevice,
+                                  L"simple.fx",
+                                  NULL,
+                                  NULL,
+                                  D3DXSHADER_DEBUG,
+                                  NULL,
+                                  &g_pEffect,
+                                  &pErr);
 
-    if (FAILED(hr))
-    {
-        if (pErr != NULL)
-        {
-            OutputDebugStringA((const char*)pErr->GetBufferPointer());
-        }
-        SAFE_RELEASE(pErr);
-        return false;
-    }
+    assert(hr == S_OK);
     SAFE_RELEASE(pErr);
 
     // Env Cube
-    hr = D3DXCreateCubeTextureFromFile(
-        g_pd3dDevice,
-        _T("Texture1.dds"),
-        &g_pEnvCube
-    );
+    hr = D3DXCreateCubeTextureFromFile(g_pd3dDevice,
+                                       L"Texture1.dds",
+                                       &g_pEnvCube);
+
     if (FAILED(hr))
     {
         return false;
     }
 
     // Font
-    hr = D3DXCreateFont(
-        g_pd3dDevice,
-        18,
-        0,
-        FW_NORMAL,
-        1,
-        FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        DEFAULT_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE,
-        _T("BIZ UDゴシック"),
-        &g_pFont
-    );
+    hr = D3DXCreateFont(g_pd3dDevice,
+                        18,
+                        0,
+                        FW_NORMAL,
+                        1,
+                        FALSE,
+                        DEFAULT_CHARSET,
+                        OUT_DEFAULT_PRECIS,
+                        DEFAULT_QUALITY,
+                        DEFAULT_PITCH | FF_DONTCARE,
+                        L"BIZ UDゴシック",
+                        &g_pFont);
+
     if (FAILED(hr))
     {
         return false;
@@ -288,10 +234,7 @@ bool LoadMeshAndEffect()
     return true;
 }
 
-
-// ----------------------------------------------------------------
-
-void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
+static void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
 {
     if (font == NULL)
     {
@@ -300,19 +243,15 @@ void TextDraw(ID3DXFont* font, const TCHAR* text, int x, int y, D3DCOLOR color)
 
     RECT rc;
     SetRect(&rc, x, y, x + 2000, y + 200);
-    font->DrawText(
-        NULL,
-        text,
-        -1,
-        &rc,
-        DT_LEFT | DT_TOP | DT_NOCLIP,
-        color
-    );
+    font->DrawText(NULL,
+                   text,
+                   -1,
+                   &rc,
+                   DT_LEFT | DT_TOP | DT_NOCLIP,
+                   color);
 }
 
-// ----------------------------------------------------------------
-
-void Render()
+static void Render()
 {
     static float t = 0.0f;
     t += 0.03f;
@@ -328,28 +267,26 @@ void Render()
     D3DXVECTOR3 up(0.0f, 1.0f, 0.0f);
 
     D3DXMatrixLookAtLH(&mV, &eye, &at, &up);
-    D3DXMatrixPerspectiveFovLH(
-        &mP,
-        D3DXToRadian(45.0f),
-        (float)WINDOW_SIZE_W / (float)WINDOW_SIZE_H,
-        1.0f,
-        1000.0f
-    );
+    D3DXMatrixPerspectiveFovLH(&mP,
+                               D3DXToRadian(45.0f),
+                               (float)WINDOW_SIZE_W / (float)WINDOW_SIZE_H,
+                               1.0f,
+                               1000.0f);
 
     mWVP = mW * mV * mP;
 
     // クリア
-    g_pd3dDevice->Clear(
-        0, NULL,
-        D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-        D3DCOLOR_XRGB(80, 80, 100),
-        1.0f, 0
-    );
+    g_pd3dDevice->Clear(0,
+                        NULL,
+                        D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+                        D3DCOLOR_XRGB(80, 80, 100),
+                        1.0f,
+                        0);
 
     if (SUCCEEDED(g_pd3dDevice->BeginScene()))
     {
         // テキスト
-        TextDraw(g_pFont, _T("Environment Mapping (Cube)"), 10, 10, D3DCOLOR_XRGB(255, 255, 255));
+        TextDraw(g_pFont, L"環境マッピング", 10, 10, D3DCOLOR_XRGB(255, 255, 255));
 
         // エフェクト定数
         g_pEffect->SetMatrix("g_matWorldViewProj", &mWVP);
@@ -381,14 +318,13 @@ void Render()
     g_pd3dDevice->Present(NULL, NULL, NULL, NULL);
 }
 
-// ----------------------------------------------------------------
-
-bool InitAll(HWND hWnd)
+static bool InitAll(HWND hWnd)
 {
     if (!InitD3D(hWnd))
     {
         return false;
     }
+
     if (!LoadMeshAndEffect())
     {
         return false;
@@ -396,9 +332,15 @@ bool InitAll(HWND hWnd)
     return true;
 }
 
-// ----------------------------------------------------------------
+extern int WINAPI wWinMain(_In_ HINSTANCE hInstance,
+                           _In_opt_ HINSTANCE hPrevInstance,
+                           _In_ LPWSTR lpCmdLine,
+                           _In_ int nShowCmd);
 
-int APIENTRY _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance,
+                    _In_opt_ HINSTANCE hPrevInstance,
+                    _In_ LPWSTR lpCmdLine,
+                    _In_ int nShowCmd)
 {
     WNDCLASSEX wc;
     ZeroMemory(&wc, sizeof(wc));
@@ -412,7 +354,7 @@ int APIENTRY _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     wc.lpszMenuName = NULL;
-    wc.lpszClassName = _T("Window1");
+    wc.lpszClassName = L"Window1";
     wc.hIconSm = NULL;
 
     ATOM atom = RegisterClassEx(&wc);
@@ -422,17 +364,18 @@ int APIENTRY _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
     SetRect(&rect, 0, 0, WINDOW_SIZE_W, WINDOW_SIZE_H);
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
-    HWND hWnd = CreateWindow(
-        _T("Window1"),
-        _T("EnvMap Sample"),
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        NULL, NULL,
-        GetModuleHandle(NULL),
-        NULL
-    );
+    HWND hWnd = CreateWindow(L"Window1",
+                             L"EnvMap Sample",
+                             WS_OVERLAPPEDWINDOW,
+                             CW_USEDEFAULT,
+                             CW_USEDEFAULT,
+                             rect.right - rect.left,
+                             rect.bottom - rect.top,
+                             NULL,
+                             NULL,
+                             GetModuleHandle(NULL),
+                             NULL );
+
     assert(hWnd != NULL);
     g_hWnd = hWnd;
 
@@ -472,8 +415,6 @@ int APIENTRY _tWinMain(HINSTANCE, HINSTANCE, LPTSTR, int)
     Cleanup();
     return 0;
 }
-
-// ----------------------------------------------------------------
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {

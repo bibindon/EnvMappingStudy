@@ -18,22 +18,22 @@ sampler_state
 };
 
 // VS：ワールド位置とワールド法線を渡す
-void VertexShader1(
-    float4 inPos : POSITION,
-    float3 inNormal : NORMAL0,
-    float2 inUV : TEXCOORD0,
-    out float4 outPos : POSITION,
-    out float3 outPw : TEXCOORD0,
-    out float3 outNw : TEXCOORD1
-)
+void VertexShader1(float4 inPos : POSITION,
+                   float3 inNormal : NORMAL0,
+                   float2 inUV : TEXCOORD0,
+
+                   out float4 outPos : POSITION,
+                   out float3 outPw : TEXCOORD0,
+                   out float3 outNw : TEXCOORD1)
 {
     outPos = mul(inPos, g_matWorldViewProj);
     outPw = mul(inPos, g_matWorld).xyz;
-    outNw = normalize(mul(inNormal, (float3x3) g_matWorld)); // 逆転置が必要ならそちらを
+    outNw = normalize(mul(inNormal, (float3x3) g_matWorld));
 }
 
 // PS：World 空間で反射を計算してキューブをサンプル
-float4 PixelShader1(float3 Pw : TEXCOORD0, float3 Nw : TEXCOORD1) : COLOR
+float4 PixelShader1(float3 Pw : TEXCOORD0,
+                    float3 Nw : TEXCOORD1) : COLOR
 {
     float3 Vw = normalize(g_eyePosW - Pw); // ピクセル→カメラ
     float3 Rw = reflect(-Vw, normalize(Nw)); // 反射（World）
