@@ -96,10 +96,6 @@ static bool InitD3D(HWND hWnd)
         }
     }
 
-    g_pd3dDevice->SetRenderState(D3DRS_ZENABLE, TRUE);
-    g_pd3dDevice->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
-    g_pd3dDevice->SetRenderState(D3DRS_LIGHTING, FALSE);
-
     return true;
 }
 
@@ -108,59 +104,35 @@ static bool LoadMeshAndEffect()
     // Mesh
     LPD3DXBUFFER pAdj = NULL;
     LPD3DXBUFFER pMtl = NULL;
-    LPD3DXBUFFER pFxInst = NULL;
     DWORD        numMaterials = 0;
 
     HRESULT hr = D3DXLoadMeshFromX(
-                                   _T("cube.x"),
-                                   //_T("sphere.x"),
+                                   //_T("cube.x"),
+                                   _T("sphere.x"),
                                    D3DXMESH_MANAGED,
                                    g_pd3dDevice,
                                    &pAdj,
                                    &pMtl,
-                                   &pFxInst,
+                                   NULL,
                                    &numMaterials,
                                    &g_pMesh);
 
-    if (FAILED(hr))
-    {
-        SAFE_RELEASE(pAdj);
-        SAFE_RELEASE(pMtl);
-        SAFE_RELEASE(pFxInst);
-        return false;
-    }
-
-    {
-        // メッシュに法線要素が無ければクローンして法線を追加
-        DWORD fvf = g_pMesh->GetFVF();
-        if ((fvf & D3DFVF_NORMAL) == 0)
-        {
-            LPD3DXMESH pCloned = NULL;
-            hr = g_pMesh->CloneMeshFVF(g_pMesh->GetOptions() | D3DXMESH_MANAGED,
-                                       fvf | D3DFVF_NORMAL,
-                                       g_pd3dDevice,
-                                       &pCloned);
-
-            assert(hr == S_OK);
-
-            SAFE_RELEASE(g_pMesh);
-            g_pMesh = pCloned;
-        }
-
-        // 隣接情報を使って法線を再計算（スムージング）
-        DWORD* pAdjData = nullptr;
-        if (pAdj != NULL)
-        {
-            pAdjData = (DWORD*)pAdj->GetBufferPointer();
-        }
-
-        // 球だったら隣接情報あり
-        // 立方体だったら隣接情報なしのほうが良い感じになる
-        //hr = D3DXComputeNormals(g_pMesh, pAdjData);
-        hr = D3DXComputeNormals(g_pMesh, NULL);
-    }
+    assert(hr == S_OK);
 
     g_dwNumMaterials = numMaterials;
+
+    // 隣接情報を計算して法線を再計算
+    // なめらかになる
+    // なめらかにしたくないときは計算してはいけない
+    if (false)
+    {
+        // 隣接情報を使って法線を再計算（スムージング）
+        DWORD* pAdjData = nullptr;
+        pAdjData = (DWORD*)pAdj->GetBufferPointer();
+
+        hr = D3DXComputeNormals(g_pMesh, pAdjData);
+    }
+    SAFE_RELEASE(pAdj);
 
     if (pMtl != NULL)
     {
@@ -178,13 +150,9 @@ static bool LoadMeshAndEffect()
             }
         }
     }
+
     SAFE_RELEASE(pMtl);
-    SAFE_RELEASE(pAdj);
-    SAFE_RELEASE(pFxInst);
 
-    // Effect
-
-    LPD3DXBUFFER pErr = NULL;
     hr = D3DXCreateEffectFromFile(g_pd3dDevice,
                                   L"simple.fx",
                                   NULL,
@@ -192,20 +160,16 @@ static bool LoadMeshAndEffect()
                                   D3DXSHADER_DEBUG,
                                   NULL,
                                   &g_pEffect,
-                                  &pErr);
+                                  NULL);
 
     assert(hr == S_OK);
-    SAFE_RELEASE(pErr);
 
     // Env Cube
     hr = D3DXCreateCubeTextureFromFile(g_pd3dDevice,
                                        L"Texture1.dds",
                                        &g_pEnvCube);
 
-    if (FAILED(hr))
-    {
-        return false;
-    }
+    assert(hr == S_OK);
 
     // Font
     hr = D3DXCreateFont(g_pd3dDevice,
@@ -221,10 +185,7 @@ static bool LoadMeshAndEffect()
                         L"BIZ UDゴシック",
                         &g_pFont);
 
-    if (FAILED(hr))
-    {
-        return false;
-    }
+    assert(hr == S_OK);
 
     return true;
 }
@@ -255,7 +216,8 @@ static void Render()
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(4.0f * sinf(t), 4.f * sinf(t), -4.0f * cosf(t));
+    //D3DXVECTOR3 eye(4.0f * sinf(t), 4.f * sinf(t), -4.0f * cosf(t));
+    D3DXVECTOR3 eye(4.0f * sinf(t), 2.f, -4.0f * cosf(t));
     D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
     g_pEffect->SetVector("g_eyePosW", &eye4);
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
