@@ -1,7 +1,6 @@
 // 行列
 float4x4 g_matWorldViewProj;
 float4x4 g_matWorld;
-float4x4 g_matView;
 float3 g_eyePosW;
 
 // 環境キューブマップ
@@ -36,10 +35,11 @@ float4 PixelShader1(float3 posWorld  : TEXCOORD0,
                     float3 normWorld : TEXCOORD1) : COLOR
 {
     // ピクセル→カメラ
-    float3 viewWorld = normalize(g_eyePosW - posWorld);
+    // このベクトルに-1をかけたらガラス玉風になる
+    float3 viewWorld = normalize(posWorld - g_eyePosW);
 
     // 反射（World）
-    float3 reflectWorld = reflect(-viewWorld, normalize(normWorld));
+    float3 reflectWorld = reflect(viewWorld, normalize(normWorld));
 
     return float4(texCUBE(EnvSamp, reflectWorld).rgb, 1.0);
 }

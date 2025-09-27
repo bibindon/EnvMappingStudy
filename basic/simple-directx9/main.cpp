@@ -124,7 +124,7 @@ static bool LoadMeshAndEffect()
     // 隣接情報を計算して法線を再計算
     // なめらかになる
     // なめらかにしたくないときは計算してはいけない
-    if (false)
+    if (true)
     {
         // 隣接情報を使って法線を再計算（スムージング）
         DWORD* pAdjData = nullptr;
@@ -248,9 +248,7 @@ static void Render()
         // エフェクト定数
         g_pEffect->SetMatrix("g_matWorldViewProj", &mWVP);
         g_pEffect->SetMatrix("g_matWorld", &mW);
-        g_pEffect->SetMatrix("g_matView", &mV);
         g_pEffect->SetTexture("EnvMap", g_pEnvCube);
-
 
         // 描画
         g_pEffect->SetTechnique("Technique1");
