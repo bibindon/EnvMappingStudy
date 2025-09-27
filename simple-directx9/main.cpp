@@ -165,11 +165,6 @@ static bool LoadMeshAndEffect()
     if (pMtl != NULL)
     {
         D3DXMATERIAL* pMaterials = (D3DXMATERIAL*)pMtl->GetBufferPointer();
-        // 念のため、numMaterials が 0 の SDK 実装でもサイズから算出
-        if (g_dwNumMaterials == 0)
-        {
-            g_dwNumMaterials = pMtl->GetBufferSize() / sizeof(D3DXMATERIAL);
-        }
 
         g_pTextures.resize(g_dwNumMaterials, NULL);
 
@@ -260,7 +255,7 @@ static void Render()
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(4.0f * sinf(t), 2.f, -4.0f * cosf(t));
+    D3DXVECTOR3 eye(4.0f * sinf(t), 4.f * sinf(t), -4.0f * cosf(t));
     D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
     g_pEffect->SetVector("g_eyePosW", &eye4);
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
@@ -293,6 +288,7 @@ static void Render()
         g_pEffect->SetMatrix("g_matWorld", &mW);
         g_pEffect->SetMatrix("g_matView", &mV);
         g_pEffect->SetTexture("EnvMap", g_pEnvCube);
+
 
         // 描画
         g_pEffect->SetTechnique("Technique1");
