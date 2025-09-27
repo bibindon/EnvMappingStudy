@@ -255,7 +255,7 @@ static void Render()
     D3DXMATRIX mW, mV, mP, mWVP;
     D3DXMatrixIdentity(&mW);
 
-    D3DXVECTOR3 eye(4.0f * sinf(t), 4.f * sinf(t), -4.0f * cosf(t));
+    D3DXVECTOR3 eye(4.0f * sinf(t), 2.f, -4.0f * cosf(t));
     D3DXVECTOR4 eye4(eye.x, eye.y, eye.z, 1.0f);
     g_pEffect->SetVector("g_eyePosW", &eye4);
     D3DXVECTOR3 at(0.0f, 0.0f, 0.0f);
@@ -287,7 +287,7 @@ static void Render()
         g_pEffect->SetTexture("EnvMap", g_pEnvCube);
 
         // 例として反射強度を少し上げたい場合
-        float reflectAmount = 0.4f;
+        float reflectAmount = 0.3f;
         g_pEffect->SetFloat("g_reflectAmount", reflectAmount);
 
         g_pEffect->SetTechnique("Technique1");

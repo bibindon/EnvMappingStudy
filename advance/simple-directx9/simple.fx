@@ -6,7 +6,7 @@ float3 g_eyePosW;
 
 // ブレンド係数
 // 0 はアルベドのみ、1 は反射のみ
-float g_reflectAmount = 0.4;
+float g_reflectAmount = 0.0;
 
 // 環境キューブマップ
 textureCUBE EnvMap;
@@ -20,7 +20,7 @@ sampler_state
     MagFilter = LINEAR;
     AddressU = CLAMP;
     AddressV = CLAMP;
-    MaxMipLevel = 9;
+    MaxMipLevel = 7;
 };
 
 // メッシュのアルベドテクスチャ
