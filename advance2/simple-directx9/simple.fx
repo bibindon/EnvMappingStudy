@@ -42,6 +42,16 @@ float4 PixelShader1(float3 posWorld  : TEXCOORD0,
     float3 refractWorld = refract(viewWorld, normalize(normWorld), 1.0 / 1.5);
 
     float3 refractColor = texCUBE(EnvSamp, refractWorld).rgb;
+
+    float average = refractColor.r + refractColor.g + refractColor.b;
+
+    // ê¬Ç¢ÉKÉâÉXã ÅH
+    if (false)
+    {
+        refractColor.rg = average * 0.2;
+        refractColor.b = average;
+    }
+
     return float4(refractColor, 1.f);
 }
 
